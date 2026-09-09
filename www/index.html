@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Laboratório DNS e Load Balancer</title>
+  <style>
+    :root { color-scheme: light; font-family: Arial, sans-serif; --blue:#287df0; --ink:#172033; --pale:#f2f5f8; }
+    body { max-width: 1050px; margin: 0 auto; padding: 28px 22px 60px; color: var(--ink); }
+    h1 { font-size: 2.2rem; margin-bottom: .25rem; }
+    h2 { margin-top: 2.2rem; border-bottom: 2px solid #d7dde5; padding-bottom: .4rem; }
+    p, li { font-size: 1.08rem; line-height: 1.5; }
+    code, pre { font-family: "Liberation Mono", monospace; }
+    pre { background: #111827; color: white; padding: 16px; overflow-x: auto; }
+    button { background: var(--blue); color: white; border: 0; padding: 12px 16px; margin: 5px 8px 5px 0; font-weight: 700; cursor: pointer; }
+    button:disabled { opacity: .55; cursor: wait; }
+    .result { background: var(--pale); padding: 16px; min-height: 70px; white-space: pre-wrap; }
+    table { border-collapse: collapse; width: 100%; margin-top: 14px; }
+    th, td { border: 1px solid #c9d0d9; padding: 9px; text-align: left; }
+    .note { border-left: 6px solid var(--blue); padding: 4px 16px; background: var(--pale); }
+  </style>
+</head>
+<body>
+  <h1>Laboratório DNS e Load Balancer</h1>
+  <p>Hostname observado: <strong id="host"></strong>. Todo o tráfego HTTP entra pela porta 80. O caminho seleciona a política do NGINX.</p>
+
+  <h2>1. Evidência DNS</h2>
+  <p>Execute no terminal do computador. Substitua o hostname se o professor fornecer outro.</p>
+  <pre id="dnsCommands"></pre>
+  <div class="note">Registre o endereço, o TTL quando a ferramenta o mostrar e o servidor que respondeu. O DNS fornece o endereço do ponto de entrada, não o nome do backend.</div>
+
+  <h2>2. Requisição individual</h2>
+  <button data-action="single">Enviar uma requisição</button>
+  <div id="singleResult" class="result">A resposta aparecerá aqui.</div>
+
+  <h2>3. Distribuição observada</h2>
+  <button data-action="rr">12 requisições em round-robin</button>
+  <button data-action="weighted">25 requisições com pesos 3:1:1</button>
+  <button data-action="least">Teste de conexões lentas</button>
+  <div id="batchResult" class="result">Registre uma previsão antes de executar.</div>
+
+  <h2>4. Evidências HTTP</h2>
+  <p>Abra as ferramentas do desenvolvedor, guia Rede, ou use:</p>
+  <pre id="curlCommand"></pre>
+  <p>Procure os cabeçalhos <code>X-Backend-Instance</code>, <code>X-LB-Upstream</code> e <code>X-LB-Policy</code>.</p>
+
+  <script>
+    const host = window.location.hostname;
+    document.querySelector('#host').textContent = host;
+    document.querySelector('#dnsCommands').textContent =
+      `Linux/macOS:  dig ${host} A\nWindows:      Resolve-DnsName ${host} -Type A\nAlternativa:  nslookup ${host}`;
+    document.querySelector('#curlCommand').textContent = `curl -i http://${host}/rr/catalogo/42`;
+
+    async function requestJson(url) {
+      const separator = url.includes('?') ? '&' : '?';
+      const response = await fetch(`${url}${separator}amostra=${crypto.randomUUID()}`, { cache: 'no-store' });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return { body: await response.json(), headers: Object.fromEntries(response.headers.entries()) };
+    }
+
+    function counts(samples) {
+      return samples.reduce((acc, sample) => {
+        const key = sample.body.instance;
+        acc[key] = (acc[key] || 0) + 1;
+        return acc;
+      }, {});
+    }
+
+    async function runBatch(path, total) {
+      const samples = [];
+      for (let i = 0; i < total; i++) samples.push(await requestJson(path));
+      return samples;
+    }
+
+    async function withDisabledButtons(action) {
+      const buttons = [...document.querySelectorAll('button')];
+      buttons.forEach(button => button.disabled = true);
+      try { await action(); } finally { buttons.forEach(button => button.disabled = false); }
+    }
+
+    document.querySelector('[data-action="single"]').addEventListener('click', () => withDisabledButtons(async () => {
+      const result = await requestJson('/rr/catalogo/42');
+      document.querySelector('#singleResult').textContent = JSON.stringify(result, null, 2);
+    }));
+
+    document.querySelector('[data-action="rr"]').addEventListener('click', () => withDisabledButtons(async () => {
+      const samples = await runBatch('/rr/catalogo/42', 12);
+      document.querySelector('#batchResult').textContent = `Round-robin\n${JSON.stringify(counts(samples), null, 2)}`;
+    }));
+
+    document.querySelector('[data-action="weighted"]').addEventListener('click', () => withDisabledButtons(async () => {
+      const samples = await runBatch('/weighted/catalogo/42', 25);
+      document.querySelector('#batchResult').textContent = `Pesos 3:1:1\n${JSON.stringify(counts(samples), null, 2)}`;
+    }));
+
+    document.querySelector('[data-action="least"]').addEventListener('click', () => withDisabledButtons(async () => {
+      const slowA = requestJson('/least/slow?ms=4000');
+      const slowB = requestJson('/least/slow?ms=4000');
+      await new Promise(resolve => setTimeout(resolve, 500));
+      const fast = await runBatch('/least/catalogo/42', 8);
+      await Promise.all([slowA, slowB]);
+      document.querySelector('#batchResult').textContent = `Requisições rápidas durante duas lentas\n${JSON.stringify(counts(fast), null, 2)}`;
+    }));
+  </script>
+</body>
+</html>
