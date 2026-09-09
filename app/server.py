@@ -6,6 +6,7 @@ from urllib.parse import parse_qs, urlparse
 
 
 INSTANCE = os.environ.get("INSTANCE", "app-unknown")
+PORT = int(os.environ.get("PORT", "8000"))
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -52,6 +53,5 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    print(f"[{INSTANCE}] escutando em 0.0.0.0:8000", flush=True)
-    ThreadingHTTPServer(("0.0.0.0", 8000), Handler).serve_forever()
-
+    print(f"[{INSTANCE}] escutando em 0.0.0.0:{PORT}", flush=True)
+    ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
