@@ -21,6 +21,18 @@ chmod +x install-ec2.sh remote-lab.sh
 
 Acesse `http://DNS-PUBLICO-DA-EC2/`.
 
+## Reparo do runtime no Ubuntu
+
+Se aparecer `open sysctl net.ipv4.ip_unprivileged_port_start ... permission denied`, o contêiner nem chegou a iniciar. Algumas combinações do pacote `docker.io` do Ubuntu com `runc` provocam essa falha. Execute:
+
+```bash
+chmod +x reparar-docker-ubuntu.sh
+./reparar-docker-ubuntu.sh
+./remote-lab.sh start
+```
+
+O reparo troca os pacotes da distribuição pelos pacotes do repositório oficial do Docker. Ele não apaga `/var/lib/docker`.
+
 ## Experimentos
 
 ```text
@@ -62,4 +74,3 @@ Se o teste local funcionar e o navegador externo não, investigue o grupo de seg
 ```
 
 Depois siga a orientação do professor para interromper ou encerrar a EC2 e evitar custos desnecessários.
-
